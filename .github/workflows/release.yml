@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - "main"
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  meta:
+    name: Compute release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      is_tag: ${{ steps.meta.outputs.is_tag }}
+      is_main: ${{ steps.meta.outputs.is_main }}
+      version: ${{ steps.meta.outputs.version }}
+      npm_tag: ${{ steps.meta.outputs.npm_tag }}
+    steps:
+      - name: Build version strings
+        id: meta
+        run: |
+          is_tag=false
+          is_main=false
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then is_tag=true; fi
+          if [ "${GITHUB_REF_NAME:-}" = "main" ]; then is_main=true; fi
+          ts=$(date -u +%Y%m%d%H%M%S)
+          short_sha="${GITHUB_SHA::7}"
+          if [ "$is_tag" = true ]; then
+            version="${GITHUB_REF_NAME#v}"
+            npm_tag="latest"
+          else
+            version="0.0.0-dev.${ts}.${short_sha}"
+            npm_tag="dev"
+          fi
+          echo "is_tag=$is_tag" >> "$GITHUB_OUTPUT"
+          echo "is_main=$is_main" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$npm_tag" >> "$GITHUB_OUTPUT"
