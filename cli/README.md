@@ -7,15 +7,26 @@ Free. Open source. Code anywhere.
 ## Installation
 
 ```bash
-npm install -g happy-coder
+npm install -g happy-codex
 ```
 
 ## Usage
 
-### Claude (default)
+### Codex (default)
 
 ```bash
 happy
+```
+
+This will:
+1. Start a Codex session
+2. Display a QR code to connect from your mobile device
+3. Allow real-time session sharing between Codex and your mobile app
+
+### Claude
+
+```bash
+happy claude
 ```
 
 This will:
@@ -41,7 +52,8 @@ happy connect gemini
 
 ### Main Commands
 
-- `happy` – Start Claude Code session (default)
+- `happy` – Start Codex session (default)
+- `happy claude` – Start Claude Code session
 - `happy gemini` – Start Gemini CLI session
 - `happy codex` – Start Codex mode
 
@@ -76,7 +88,7 @@ happy gemini project get          # Show current Google Cloud Project ID
 
 ## Options
 
-### Claude Options
+### Claude Options (when running `happy claude`)
 
 - `-m, --model <model>` - Claude model to use (default: sonnet)
 - `-p, --permission-mode <mode>` - Permission mode: auto, default, or plan

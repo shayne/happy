@@ -463,6 +463,97 @@ ${chalk.bold('To clean up runaway processes:')} Use ${chalk.cyan('happy doctor c
     }
     return;
   } else {
+    const wantsClaude = args[0] === 'claude' || args.includes('--claude');
+
+    if (!wantsClaude) {
+      let showHelp = false;
+      let showVersion = false;
+      let startedBy: 'daemon' | 'terminal' | undefined = undefined;
+      const unknownArgs: string[] = [];
+
+      for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+
+        if (arg === '-h' || arg === '--help') {
+          showHelp = true;
+        } else if (arg === '-v' || arg === '--version') {
+          showVersion = true;
+        } else if (arg === '--started-by') {
+          const value = args[++i] as 'daemon' | 'terminal' | undefined;
+          if (value !== 'daemon' && value !== 'terminal') {
+            console.error(chalk.red(`Invalid --started-by value: ${value}. Must be 'daemon' or 'terminal'`));
+            process.exit(1);
+          }
+          startedBy = value;
+        } else {
+          unknownArgs.push(arg);
+          if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
+            unknownArgs.push(args[++i]);
+          }
+        }
+      }
+
+      if (showHelp) {
+        console.log(`
+${chalk.bold('happy')} - Start Codex session (default)
+
+${chalk.bold('Usage:')}
+  happy                    Start Codex session
+  happy codex              Start Codex session (explicit)
+  happy claude             Start Claude Code session
+  happy gemini             Start Gemini mode (ACP)
+  happy connect            Connect AI vendor API keys
+  happy notify             Send push notification
+  happy daemon             Manage background service
+  happy doctor             System diagnostics & troubleshooting
+
+${chalk.bold('Options:')}
+  -h, --help               Show help
+  -v, --version            Show version
+  --started-by <mode>      Set session origin (daemon|terminal)
+`);
+        process.exit(0);
+      }
+
+      if (showVersion) {
+        console.log(`happy version: ${packageJson.version}`);
+        // Continue to start the session
+      }
+
+      if (unknownArgs.length > 0) {
+        console.log(chalk.yellow(`Ignoring unsupported options for Codex: ${unknownArgs.join(' ')}`));
+        console.log(chalk.yellow(`Use "happy claude ..." for Claude-specific flags.`));
+      }
+
+      const { runCodex } = await import('@/codex/runCodex');
+      const { credentials } = await authAndSetupMachineIfNeeded();
+
+      logger.debug('Ensuring Happy background service is running & matches our version...');
+
+      if (!(await isDaemonRunningCurrentlyInstalledHappyVersion())) {
+        logger.debug('Starting Happy background service...');
+
+        const daemonProcess = spawnHappyCLI(['daemon', 'start-sync'], {
+          detached: true,
+          stdio: 'ignore',
+          env: process.env
+        });
+        daemonProcess.unref();
+
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+
+      try {
+        await runCodex({ credentials, startedBy });
+      } catch (error) {
+        console.error(chalk.red('Error:'), error instanceof Error ? error.message : 'Unknown error');
+        if (process.env.DEBUG) {
+          console.error(error);
+        }
+        process.exit(1);
+      }
+      return;
+    }
 
     // If the first argument is claude, remove it
     if (args.length > 0 && args[0] === 'claude') {

@@ -1,5 +1,5 @@
 {
-  "name": "happy-coder",
+  "name": "happy-codex",
   "version": "0.14.0-0",
   "description": "Mobile and Web client for Claude Code and Codex",
   "author": "Kirill Dubovitskiy",
@@ -10,7 +10,8 @@
   "repository": "slopus/happy-cli",
   "bin": {
     "happy": "./bin/happy.mjs",
-    "happy-mcp": "./bin/happy-mcp.mjs"
+    "happy-mcp": "./bin/happy-mcp.mjs",
+    "happy-codex": "./bin/happy.mjs"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
