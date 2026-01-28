@@ -40,9 +40,10 @@ export class CodexPermissionHandler extends BasePermissionHandler {
         toolName: string,
         input: unknown
     ): Promise<PermissionResult> {
+        const requestId = this.normalizeRequestId(toolCallId as unknown as string | number);
         return new Promise<PermissionResult>((resolve, reject) => {
             // Store the pending request
-            this.pendingRequests.set(toolCallId, {
+            this.pendingRequests.set(requestId, {
                 resolve,
                 reject,
                 toolName,
@@ -50,9 +51,9 @@ export class CodexPermissionHandler extends BasePermissionHandler {
             });
 
             // Update agent state with pending request
-            this.addPendingRequestToState(toolCallId, toolName, input);
+            this.addPendingRequestToState(requestId, toolName, input);
 
-            logger.debug(`${this.getLogPrefix()} Permission request sent for tool: ${toolName} (${toolCallId})`);
+            logger.debug(`${this.getLogPrefix()} Permission request sent for tool: ${toolName} (${requestId})`);
         });
     }
 }

@@ -102,17 +102,18 @@ export class GeminiPermissionHandler extends BasePermissionHandler {
         toolName: string,
         input: unknown
     ): Promise<PermissionResult> {
+        const requestId = this.normalizeRequestId(toolCallId as unknown as string | number);
         // Check if we should auto-approve based on permission mode
         // Pass toolCallId to check by ID (e.g., change_title-* even if toolName is "other")
-        if (this.shouldAutoApprove(toolName, toolCallId, input)) {
-            logger.debug(`${this.getLogPrefix()} Auto-approving tool ${toolName} (${toolCallId}) in ${this.currentPermissionMode} mode`);
+        if (this.shouldAutoApprove(toolName, requestId, input)) {
+            logger.debug(`${this.getLogPrefix()} Auto-approving tool ${toolName} (${requestId}) in ${this.currentPermissionMode} mode`);
 
             // Update agent state with auto-approved request
             this.session.updateAgentState((currentState) => ({
                 ...currentState,
                 completedRequests: {
                     ...currentState.completedRequests,
-                    [toolCallId]: {
+                    [requestId]: {
                         tool: toolName,
                         arguments: input,
                         createdAt: Date.now(),
@@ -131,7 +132,7 @@ export class GeminiPermissionHandler extends BasePermissionHandler {
         // Otherwise, ask for permission
         return new Promise<PermissionResult>((resolve, reject) => {
             // Store the pending request
-            this.pendingRequests.set(toolCallId, {
+            this.pendingRequests.set(requestId, {
                 resolve,
                 reject,
                 toolName,
@@ -139,10 +140,9 @@ export class GeminiPermissionHandler extends BasePermissionHandler {
             });
 
             // Update agent state with pending request
-            this.addPendingRequestToState(toolCallId, toolName, input);
+            this.addPendingRequestToState(requestId, toolName, input);
 
-            logger.debug(`${this.getLogPrefix()} Permission request sent for tool: ${toolName} (${toolCallId}) in ${this.currentPermissionMode} mode`);
+            logger.debug(`${this.getLogPrefix()} Permission request sent for tool: ${toolName} (${requestId}) in ${this.currentPermissionMode} mode`);
         });
     }
 }
-

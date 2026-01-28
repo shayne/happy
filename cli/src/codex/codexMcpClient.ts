@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { CodexPermissionHandler } from './utils/permissionHandler';
 import { execSync } from 'child_process';
+import { randomUUID } from 'node:crypto';
 
 const DEFAULT_TIMEOUT = 14 * 24 * 60 * 60 * 1000; // 14 days, which is the half of the maximum possible timeout (~28 days for int32 value in NodeJS)
 
@@ -127,7 +128,7 @@ export class CodexMcpClient {
         // Register handler for exec command approval requests
         this.client.setRequestHandler(
             ElicitRequestSchema,
-            async (request) => {
+            async (request, extra) => {
                 console.log('[CodexMCP] Received elicitation request:', request.params);
 
                 // Load params
@@ -138,14 +139,29 @@ export class CodexMcpClient {
                     codex_event_id: string,
                     codex_call_id: string,
                     codex_command: string[],
-                    codex_cwd: string
-                }
-                const toolName = 'CodexBash';
+                    codex_cwd: string,
+                    codex_reason?: string,
+                    codex_grant_root?: string,
+                    codex_changes?: unknown
+                };
+                const permissionId = String(
+                    params.codex_call_id ??
+                    params.codex_mcp_tool_call_id ??
+                    params.codex_event_id ??
+                    extra?.requestId ??
+                    randomUUID()
+                );
+                const isPatchApproval = params.codex_elicitation === 'patch-approval';
+                const toolName = isPatchApproval ? 'CodexPatch' : 'CodexBash';
+                const input = isPatchApproval
+                    ? { changes: params.codex_changes, grantRoot: params.codex_grant_root, reason: params.codex_reason }
+                    : { command: params.codex_command, cwd: params.codex_cwd };
 
                 // If no permission handler set, deny by default
                 if (!this.permissionHandler) {
                     logger.debug('[CodexMCP] No permission handler set, denying by default');
                     return {
+                        action: 'decline' as const,
                         decision: 'denied' as const,
                     };
                 }
@@ -153,21 +169,27 @@ export class CodexMcpClient {
                 try {
                     // Request permission through the handler
                     const result = await this.permissionHandler.handleToolCall(
-                        params.codex_call_id,
+                        permissionId,
                         toolName,
-                        {
-                            command: params.codex_command,
-                            cwd: params.codex_cwd
-                        }
+                        input
                     );
 
                     logger.debug('[CodexMCP] Permission result:', result);
+                    const action =
+                        result.decision === 'approved' || result.decision === 'approved_for_session'
+                            ? 'accept'
+                            : result.decision === 'abort'
+                                ? 'cancel'
+                                : 'decline';
                     return {
+                        action,
+                        content: action === 'accept' ? {} : undefined,
                         decision: result.decision
                     }
                 } catch (error) {
                     logger.debug('[CodexMCP] Error handling permission request:', error);
                     return {
+                        action: 'decline' as const,
                         decision: 'denied' as const,
                         reason: error instanceof Error ? error.message : 'Permission request failed'
                     };

@@ -15,7 +15,7 @@ import { AgentState } from "@/api/types";
  * Permission response from the mobile app.
  */
 export interface PermissionResponse {
-    id: string;
+    id: string | number;
     approved: boolean;
     decision?: 'approved' | 'approved_for_session' | 'denied' | 'abort';
 }
@@ -53,6 +53,14 @@ export abstract class BasePermissionHandler {
      */
     protected abstract getLogPrefix(): string;
 
+    /**
+     * Normalize request IDs to strings to ensure consistent matching between
+     * Map keys and JSON object keys (which are always strings).
+     */
+    protected normalizeRequestId(id: string | number): string {
+        return typeof id === 'string' ? id : String(id);
+    }
+
     constructor(session: ApiSessionClient) {
         this.session = session;
         this.setupRpcHandler();
@@ -76,14 +84,15 @@ export abstract class BasePermissionHandler {
         this.session.rpcHandlerManager.registerHandler<PermissionResponse, void>(
             'permission',
             async (response) => {
-                const pending = this.pendingRequests.get(response.id);
+                const requestId = this.normalizeRequestId(response.id);
+                const pending = this.pendingRequests.get(requestId);
                 if (!pending) {
                     logger.debug(`${this.getLogPrefix()} Permission request not found or already resolved`);
                     return;
                 }
 
                 // Remove from pending
-                this.pendingRequests.delete(response.id);
+                this.pendingRequests.delete(requestId);
 
                 // Resolve the permission request
                 const result: PermissionResult = response.approved
@@ -94,17 +103,17 @@ export abstract class BasePermissionHandler {
 
                 // Move request to completed in agent state
                 this.session.updateAgentState((currentState) => {
-                    const request = currentState.requests?.[response.id];
+                    const request = currentState.requests?.[requestId];
                     if (!request) return currentState;
 
-                    const { [response.id]: _, ...remainingRequests } = currentState.requests || {};
+                    const { [requestId]: _, ...remainingRequests } = currentState.requests || {};
 
                     let res = {
                         ...currentState,
                         requests: remainingRequests,
                         completedRequests: {
                             ...currentState.completedRequests,
-                            [response.id]: {
+                            [requestId]: {
                                 ...request,
                                 completedAt: Date.now(),
                                 status: response.approved ? 'approved' : 'denied',
@@ -124,11 +133,12 @@ export abstract class BasePermissionHandler {
      * Add a pending request to the agent state.
      */
     protected addPendingRequestToState(toolCallId: string, toolName: string, input: unknown): void {
+        const requestId = this.normalizeRequestId(toolCallId);
         this.session.updateAgentState((currentState) => ({
             ...currentState,
             requests: {
                 ...currentState.requests,
-                [toolCallId]: {
+                [requestId]: {
                     tool: toolName,
                     arguments: input,
                     createdAt: Date.now()
