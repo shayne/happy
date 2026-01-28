@@ -320,7 +320,18 @@ When modifying profile schemas:
 
 ## Publishing to npm
 
-Maintainers can publish new versions:
+### CI (preferred)
+
+Releases are published via GitHub Actions Trusted Publishing (OIDC):
+
+- **Prod**: push a tag `vX.Y.Z` → `release.yml` publishes `happy-codex` to npm with dist-tag `latest`
+- **Dev**: pushes to `main` → `release.yml` auto-generates a version like `0.0.0-dev.YYYYMMDDHHMMSS.<sha>` and publishes with dist-tag `dev`
+
+The workflow uses the GitHub Actions environment named **`npm`** and must be configured in npm’s Trusted Publisher settings for this repo/workflow.
+
+### Manual publish (fallback)
+
+Maintainers can still publish manually if needed:
 
 ```bash
 yarn release       # Interactive version bump, changelog, publish
