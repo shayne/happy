@@ -1,17 +1,20 @@
 {
   "name": "happy-codex",
-  "version": "0.14.0-1",
+  "version": "0.14.1",
   "description": "Mobile and Web client for Claude Code and Codex",
   "author": "Kirill Dubovitskiy",
   "license": "MIT",
   "type": "module",
   "homepage": "https://github.com/shayne/happy",
   "bugs": "https://github.com/shayne/happy/issues",
-  "repository": "shayne/happy",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shayne/happy.git"
+  },
   "bin": {
-    "happy": "./bin/happy.mjs",
-    "happy-mcp": "./bin/happy-mcp.mjs",
-    "happy-codex": "./bin/happy.mjs"
+    "happy": "bin/happy.mjs",
+    "happy-mcp": "bin/happy-mcp.mjs",
+    "happy-codex": "bin/happy.mjs"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",

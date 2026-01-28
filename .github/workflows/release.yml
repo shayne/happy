@@ -108,7 +108,7 @@ jobs:
         run: yarn build
         working-directory: cli
       - name: Publish
-        run: npm publish --access public
+        run: npm publish --access public --tag "${{ needs.meta.outputs.npm_tag }}"
         working-directory: cli
 
   publish-npm-dev:
