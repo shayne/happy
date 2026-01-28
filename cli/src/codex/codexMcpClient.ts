@@ -24,9 +24,21 @@ import {
 
 const DEFAULT_TIMEOUT = 14 * 24 * 60 * 60 * 1000; // 14 days, which is the half of the maximum possible timeout (~28 days for int32 value in NodeJS)
 
+function withPassthrough(schema: z.ZodTypeAny): z.ZodTypeAny {
+    const maybePassthrough = (schema as { passthrough?: () => z.ZodTypeAny }).passthrough;
+    if (typeof maybePassthrough === 'function') {
+        return maybePassthrough.call(schema);
+    }
+    const maybeUnion = (schema as { _def?: { options?: z.ZodTypeAny[] } })._def?.options;
+    if (Array.isArray(maybeUnion)) {
+        return z.union(maybeUnion.map((option) => withPassthrough(option)));
+    }
+    return schema;
+}
+
 const ElicitRequestSchemaWithExtras = RequestSchema.extend({
     method: z.literal('elicitation/create'),
-    params: ElicitRequestParamsSchema.passthrough()
+    params: withPassthrough(ElicitRequestParamsSchema)
 });
 
 // Codex MCP elicitation request params
