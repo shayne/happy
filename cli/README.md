@@ -1,3 +1,9 @@
+# Fork notice (github.com/shayne/happy)
+
+This is a fork of the upstream project at https://github.com/slopus/happy, focused on
+first-class **Codex** support while complementing the original work. You can use this
+fork via `npx -y happy-codex@latest`. In this fork, **Codex is the default agent**.
+
 # Happy
 
 Code on the go — control AI coding agents from your mobile device.

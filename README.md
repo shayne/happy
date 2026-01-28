@@ -1,3 +1,8 @@
+> **Fork notice (github.com/shayne/happy):** This is a fork of the upstream project at
+> https://github.com/slopus/happy, focused on first-class **Codex** support while
+> complementing the original work. You can use this fork via
+> `npx -y happy-codex@latest`. In this fork, **Codex is the default agent**.
+
 <div align="center"><img src="/.github/logotype-dark.png" width="400" title="Happy Coder" alt="Happy Coder"/></div>
 
 <h1 align="center">
@@ -30,7 +35,7 @@ Step 2: Install CLI on your computer
 </h3>
 
 ```bash
-npm install -g happy-coder
+npm install -g happy-codex
 ```
 
 <h3 align="center">
