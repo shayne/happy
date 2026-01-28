@@ -31,7 +31,11 @@ function withPassthrough(schema: z.ZodTypeAny): z.ZodTypeAny {
     }
     const maybeUnion = (schema as { _def?: { options?: z.ZodTypeAny[] } })._def?.options;
     if (Array.isArray(maybeUnion)) {
-        return z.union(maybeUnion.map((option) => withPassthrough(option)));
+        const options = maybeUnion.map((option) => withPassthrough(option));
+        if (options.length >= 2) {
+            return z.union(options as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]);
+        }
+        return options[0] ?? schema;
     }
     return schema;
 }
