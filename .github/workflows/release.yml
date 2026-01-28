@@ -67,3 +67,84 @@ jobs:
       - name: Test
         run: yarn test
         working-directory: cli
+
+  publish-npm-prod:
+    name: Publish npm package (prod)
+    runs-on: ubuntu-latest
+    needs: [meta, build-cli]
+    if: needs.meta.outputs.is_tag == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/happy-codex
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: yarn
+          cache-dependency-path: cli/yarn.lock
+      - name: Verify tag matches CLI version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./cli/package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "version mismatch: tag=$tag package.json=$pkg" >&2
+            exit 1
+          fi
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Use Yarn Classic
+        run: corepack prepare yarn@1.22.22 --activate
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+        working-directory: cli
+      - name: Build
+        run: yarn build
+        working-directory: cli
+      - name: Publish
+        run: npm publish --access public
+        working-directory: cli
+
+  publish-npm-dev:
+    name: Publish npm package (dev)
+    runs-on: ubuntu-latest
+    needs: [meta, build-cli]
+    if: needs.meta.outputs.is_main == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/happy-codex
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: yarn
+          cache-dependency-path: cli/yarn.lock
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Use Yarn Classic
+        run: corepack prepare yarn@1.22.22 --activate
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+        working-directory: cli
+      - name: Set dev version
+        run: npm version --no-git-tag-version "${{ needs.meta.outputs.version }}"
+        working-directory: cli
+      - name: Build
+        run: yarn build
+        working-directory: cli
+      - name: Publish (dev tag)
+        run: npm publish --access public --tag dev
+        working-directory: cli
