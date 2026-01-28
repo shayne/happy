@@ -492,11 +492,11 @@ export async function runGemini(opts: {
   //
 
   const happyServer = await startHappyServer(session);
-  const bridgeCommand = join(projectPath(), 'bin', 'happy-mcp.mjs');
+  const bridgeScript = join(projectPath(), 'bin', 'happy-mcp.mjs');
   const mcpServers = {
     happy: {
-      command: bridgeCommand,
-      args: ['--url', happyServer.url]
+      command: process.execPath,
+      args: [bridgeScript, '--url', happyServer.url]
     }
   };
 
@@ -1324,4 +1324,3 @@ export async function runGemini(opts: {
     logger.debug('[gemini]: Final cleanup completed');
   }
 }
-

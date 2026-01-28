@@ -346,8 +346,9 @@ export type AgentState = {
       status: 'canceled' | 'denied' | 'approved',
       reason?: string,
       mode?: PermissionMode,
-      decision?: 'approved' | 'approved_for_session' | 'denied' | 'abort',
-      allowTools?: string[]
+      decision?: 'approved' | 'approved_for_session' | 'approved_execpolicy_amendment' | 'denied' | 'abort',
+      allowTools?: string[],
+      execPolicyAmendment?: { command: string[] }
     }
   }
 }

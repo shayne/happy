@@ -7,12 +7,69 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { logger } from '@/ui/logger';
 import type { CodexSessionConfig, CodexToolResponse } from './types';
 import { z } from 'zod';
-import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { ElicitRequestParamsSchema, RequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { CodexPermissionHandler } from './utils/permissionHandler';
 import { execSync } from 'child_process';
 import { randomUUID } from 'node:crypto';
+import {
+    buildElicitationResponse,
+    getElicitationResponseStyle,
+    mapDecisionToAction,
+    mapPermissionResultToDecision,
+    parseCodexVersion,
+    type CodexVersionInfo,
+    type ElicitationResponseStyle,
+    type ReviewDecision
+} from './utils/elicitation';
 
 const DEFAULT_TIMEOUT = 14 * 24 * 60 * 60 * 1000; // 14 days, which is the half of the maximum possible timeout (~28 days for int32 value in NodeJS)
+
+const ElicitRequestSchemaWithExtras = RequestSchema.extend({
+    method: z.literal('elicitation/create'),
+    params: ElicitRequestParamsSchema.passthrough()
+});
+
+// Codex MCP elicitation request params
+interface CodexElicitationBase {
+    message: string;
+    codex_elicitation: 'exec-approval' | 'patch-approval';
+    codex_mcp_tool_call_id: string;
+    codex_event_id: string;
+    codex_call_id: string;
+}
+
+interface ExecApprovalParams extends CodexElicitationBase {
+    codex_elicitation: 'exec-approval';
+    codex_command: string[];
+    codex_cwd: string;
+    codex_parsed_cmd?: Array<{ cmd: string; args?: string[] }>;
+    codex_reason?: string;
+}
+
+interface PatchApprovalParams extends CodexElicitationBase {
+    codex_elicitation: 'patch-approval';
+    codex_reason?: string;
+    codex_grant_root?: string;
+    codex_changes?: unknown;
+}
+
+type CodexElicitationParams = ExecApprovalParams | PatchApprovalParams;
+
+let cachedCodexVersionInfo: CodexVersionInfo | null = null;
+
+function getCodexVersionInfo(): CodexVersionInfo {
+    if (cachedCodexVersionInfo) return cachedCodexVersionInfo;
+
+    try {
+        const raw = execSync('codex --version', { encoding: 'utf8' }).trim();
+        cachedCodexVersionInfo = parseCodexVersion(raw);
+        return cachedCodexVersionInfo;
+    } catch (error) {
+        logger.debug('[CodexMCP] Error detecting codex version:', error);
+        cachedCodexVersionInfo = parseCodexVersion(null);
+        return cachedCodexVersionInfo;
+    }
+}
 
 /**
  * Get the correct MCP subcommand based on installed codex version
@@ -56,6 +113,7 @@ export class CodexMcpClient {
     private conversationId: string | null = null;
     private handler: ((event: any) => void) | null = null;
     private permissionHandler: CodexPermissionHandler | null = null;
+    private execPolicyAmendments = new Map<string, string[]>();
 
     constructor() {
         this.client = new Client(
@@ -71,6 +129,7 @@ export class CodexMcpClient {
         }).passthrough(), (data) => {
             const msg = data.params.msg;
             this.updateIdentifiersFromEvent(msg);
+            this.cacheExecPolicyAmendment(msg);
             this.handler?.(msg);
         });
     }
@@ -125,25 +184,20 @@ export class CodexMcpClient {
     }
 
     private registerPermissionHandlers(): void {
+        const versionInfo = getCodexVersionInfo();
+        const responseStyle: ElicitationResponseStyle = getElicitationResponseStyle(
+            versionInfo,
+            process.env.HAPPY_CODEX_ELICITATION_STYLE?.toLowerCase()
+        );
+
         // Register handler for exec command approval requests
         this.client.setRequestHandler(
-            ElicitRequestSchema,
+            ElicitRequestSchemaWithExtras,
             async (request, extra) => {
                 console.log('[CodexMCP] Received elicitation request:', request.params);
 
                 // Load params
-                const params = request.params as unknown as {
-                    message: string,
-                    codex_elicitation: string,
-                    codex_mcp_tool_call_id: string,
-                    codex_event_id: string,
-                    codex_call_id: string,
-                    codex_command: string[],
-                    codex_cwd: string,
-                    codex_reason?: string,
-                    codex_grant_root?: string,
-                    codex_changes?: unknown
-                };
+                const params = request.params as unknown as CodexElicitationParams;
                 const permissionId = String(
                     params.codex_call_id ??
                     params.codex_mcp_tool_call_id ??
@@ -153,17 +207,15 @@ export class CodexMcpClient {
                 );
                 const isPatchApproval = params.codex_elicitation === 'patch-approval';
                 const toolName = isPatchApproval ? 'CodexPatch' : 'CodexBash';
+                const cachedAmendment = this.consumeExecPolicyAmendment(params.codex_call_id, params.codex_event_id);
                 const input = isPatchApproval
-                    ? { changes: params.codex_changes, grantRoot: params.codex_grant_root, reason: params.codex_reason }
-                    : { command: params.codex_command, cwd: params.codex_cwd };
+                    ? this.buildPatchToolInput(params as PatchApprovalParams, params.message)
+                    : this.buildExecToolInput(params as ExecApprovalParams, cachedAmendment);
 
                 // If no permission handler set, deny by default
                 if (!this.permissionHandler) {
                     logger.debug('[CodexMCP] No permission handler set, denying by default');
-                    return {
-                        action: 'decline' as const,
-                        decision: 'denied' as const,
-                    };
+                    return buildElicitationResponse(responseStyle, 'decline', 'denied');
                 }
 
                 try {
@@ -175,29 +227,90 @@ export class CodexMcpClient {
                     );
 
                     logger.debug('[CodexMCP] Permission result:', result);
-                    const action =
-                        result.decision === 'approved' || result.decision === 'approved_for_session'
-                            ? 'accept'
-                            : result.decision === 'abort'
-                                ? 'cancel'
-                                : 'decline';
-                    return {
-                        action,
-                        content: action === 'accept' ? {} : undefined,
-                        decision: result.decision
-                    }
+                    const decision: ReviewDecision = mapPermissionResultToDecision(result);
+                    const action = mapDecisionToAction(decision);
+                    return buildElicitationResponse(responseStyle, action, decision);
                 } catch (error) {
                     logger.debug('[CodexMCP] Error handling permission request:', error);
-                    return {
-                        action: 'decline' as const,
-                        decision: 'denied' as const,
-                        reason: error instanceof Error ? error.message : 'Permission request failed'
-                    };
+                    return buildElicitationResponse(responseStyle, 'decline', 'denied');
                 }
             }
         );
 
         logger.debug('[CodexMCP] Permission handlers registered');
+    }
+
+    private cacheExecPolicyAmendment(event: any): void {
+        if (!event || typeof event !== 'object') return;
+        if (event.type !== 'exec_approval_request') return;
+
+        const callId = typeof event.call_id === 'string' ? event.call_id : undefined;
+        const proposed = Array.isArray(event.proposed_execpolicy_amendment)
+            ? event.proposed_execpolicy_amendment.filter((part: unknown): part is string => typeof part === 'string' && part.length > 0)
+            : [];
+        if (callId && proposed.length) {
+            this.execPolicyAmendments.set(callId, proposed);
+        }
+    }
+
+    private consumeExecPolicyAmendment(callId?: string, eventId?: string): string[] | undefined {
+        let cached: string[] | undefined;
+        if (callId) {
+            cached = this.execPolicyAmendments.get(callId);
+        }
+        if (!cached && eventId) {
+            cached = this.execPolicyAmendments.get(eventId);
+        }
+        if (callId) this.execPolicyAmendments.delete(callId);
+        if (eventId) this.execPolicyAmendments.delete(eventId);
+        return cached;
+    }
+
+    private extractString(params: object, key: string): string | undefined {
+        const value = (params as Record<string, unknown>)[key];
+        return typeof value === 'string' && value.length > 0 ? value : undefined;
+    }
+
+    private buildExecToolInput(
+        params: ExecApprovalParams,
+        cachedAmendment?: string[]
+    ): {
+        command: string[];
+        cwd?: string;
+        parsed_cmd?: unknown[];
+        reason?: string;
+        proposedExecpolicyAmendment?: string[];
+    } {
+        const command = Array.isArray(params.codex_command)
+            ? params.codex_command.filter((p): p is string => typeof p === 'string')
+            : [];
+        const cwd = this.extractString(params, 'codex_cwd');
+        const parsed_cmd = Array.isArray(params.codex_parsed_cmd)
+            ? params.codex_parsed_cmd
+            : undefined;
+        const reason = this.extractString(params, 'codex_reason');
+        const proposedExecpolicyAmendment = cachedAmendment;
+
+        return { command, cwd, parsed_cmd, reason, proposedExecpolicyAmendment };
+    }
+
+    private buildPatchToolInput(
+        params: PatchApprovalParams,
+        message: string
+    ): {
+        message: string;
+        reason?: string;
+        grantRoot?: string;
+        changes?: unknown;
+    } {
+        const reason = this.extractString(params, 'codex_reason');
+        const grantRoot = this.extractString(params, 'codex_grant_root');
+        const changes = typeof params.codex_changes === 'object'
+            && params.codex_changes !== null
+            ? params.codex_changes
+            : undefined;
+
+        return { message, reason, grantRoot, changes };
     }
 
     async startSession(config: CodexSessionConfig, options?: { signal?: AbortSignal }): Promise<CodexToolResponse> {

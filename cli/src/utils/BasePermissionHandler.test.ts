@@ -45,4 +45,23 @@ describe('BasePermissionHandler id normalization', () => {
         const result = await withTimeout(pending, 100);
         expect(result.decision).toBe('approved');
     });
+
+    it('returns execpolicy amendment decision with command', async () => {
+        const session = new TestSession();
+        const handler = new CodexPermissionHandler(session as any);
+
+        const pending = handler.handleToolCall('exec-1', 'CodexBash', { command: ['yarn', 'dev'], cwd: '/' });
+
+        expect(session.rpcHandlerManager.handler).toBeTruthy();
+        await session.rpcHandlerManager.handler!({
+            id: 'exec-1',
+            approved: true,
+            decision: 'approved_execpolicy_amendment',
+            execPolicyAmendment: { command: ['yarn', 'dev'] }
+        });
+
+        const result = await withTimeout(pending, 100);
+        expect(result.decision).toBe('approved_execpolicy_amendment');
+        expect(result.execPolicyAmendment).toEqual({ command: ['yarn', 'dev'] });
+    });
 });

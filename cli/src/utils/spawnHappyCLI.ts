@@ -50,11 +50,10 @@
  */
 
 import { spawn, SpawnOptions, type ChildProcess } from 'child_process';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { projectPath } from '@/projectPath';
 import { logger } from '@/ui/logger';
 import { existsSync } from 'node:fs';
-import { isBun } from './runtime';
 
 /**
  * Spawn the Happy CLI with the given arguments in a cross-platform way.
@@ -70,6 +69,10 @@ import { isBun } from './runtime';
 export function spawnHappyCLI(args: string[], options: SpawnOptions = {}): ChildProcess {
   const projectRoot = projectPath();
   const entrypoint = join(projectRoot, 'dist', 'index.mjs');
+  const overrideRuntime = process.env.HAPPY_NODE_BIN;
+  const runtimePath = overrideRuntime || process.execPath || 'node';
+  const isBunRuntime = typeof (process as any).versions?.bun === 'string'
+    || basename(runtimePath).toLowerCase().includes('bun');
 
   let directory: string | URL | undefined;
   if ('cwd' in options) {
@@ -85,10 +88,9 @@ export function spawnHappyCLI(args: string[], options: SpawnOptions = {}): Child
   const fullCommand = `happy ${args.join(' ')}`;
   logger.debug(`[SPAWN HAPPY CLI] Spawning: ${fullCommand} in ${directory}`);
   
-  // Use the same Node.js flags that the wrapper script uses
-  const nodeArgs = [
-    '--no-warnings',
-    '--no-deprecation',
+  // Use the same Node.js flags that the wrapper script uses (Bun doesn't support these)
+  const runtimeArgs = [
+    ...(isBunRuntime ? [] : ['--no-warnings', '--no-deprecation']),
     entrypoint,
     ...args
   ];
@@ -100,6 +102,6 @@ export function spawnHappyCLI(args: string[], options: SpawnOptions = {}): Child
     throw new Error(errorMessage);
   }
   
-  const runtime = isBun() ? 'bun' : 'node';
-  return spawn(runtime, nodeArgs, options);
+  logger.debug(`[SPAWN HAPPY CLI] Runtime: ${runtimePath} (bun=${isBunRuntime})`);
+  return spawn(runtimePath, runtimeArgs, options);
 }

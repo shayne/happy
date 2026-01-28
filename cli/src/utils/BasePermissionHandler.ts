@@ -17,7 +17,8 @@ import { AgentState } from "@/api/types";
 export interface PermissionResponse {
     id: string | number;
     approved: boolean;
-    decision?: 'approved' | 'approved_for_session' | 'denied' | 'abort';
+    decision?: 'approved' | 'approved_for_session' | 'approved_execpolicy_amendment' | 'denied' | 'abort';
+    execPolicyAmendment?: { command: string[] };
 }
 
 /**
@@ -34,7 +35,8 @@ export interface PendingRequest {
  * Result of a permission request.
  */
 export interface PermissionResult {
-    decision: 'approved' | 'approved_for_session' | 'denied' | 'abort';
+    decision: 'approved' | 'approved_for_session' | 'approved_execpolicy_amendment' | 'denied' | 'abort';
+    execPolicyAmendment?: { command: string[] };
 }
 
 /**
@@ -95,9 +97,24 @@ export abstract class BasePermissionHandler {
                 this.pendingRequests.delete(requestId);
 
                 // Resolve the permission request
-                const result: PermissionResult = response.approved
-                    ? { decision: response.decision === 'approved_for_session' ? 'approved_for_session' : 'approved' }
-                    : { decision: response.decision === 'denied' ? 'denied' : 'abort' };
+                const result: PermissionResult = (() => {
+                    if (response.approved) {
+                        const wantsExecpolicyAmendment = response.decision === 'approved_execpolicy_amendment'
+                            && Boolean(response.execPolicyAmendment?.command?.length);
+                        if (wantsExecpolicyAmendment) {
+                            return {
+                                decision: 'approved_execpolicy_amendment',
+                                execPolicyAmendment: response.execPolicyAmendment
+                            };
+                        }
+                        return {
+                            decision: response.decision === 'approved_for_session' ? 'approved_for_session' : 'approved'
+                        };
+                    }
+                    return {
+                        decision: response.decision === 'denied' ? 'denied' : 'abort'
+                    };
+                })();
 
                 pending.resolve(result);
 
