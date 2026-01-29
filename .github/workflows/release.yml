@@ -53,20 +53,17 @@ jobs:
         with:
           node-version: 24
           cache: yarn
-          cache-dependency-path: packages/happy-cli/yarn.lock
+          cache-dependency-path: yarn.lock
       - name: Enable Corepack
         run: corepack enable
       - name: Use Yarn Classic
         run: corepack prepare yarn@1.22.22 --activate
       - name: Install dependencies
         run: yarn install --frozen-lockfile
-        working-directory: packages/happy-cli
       - name: Build
-        run: yarn build
-        working-directory: packages/happy-cli
+        run: yarn workspace happy-codex build
       - name: Test
-        run: yarn test
-        working-directory: packages/happy-cli
+        run: yarn workspace happy-codex test
 
   publish-npm-prod:
     name: Publish npm package (prod)
@@ -88,7 +85,7 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           cache: yarn
-          cache-dependency-path: packages/happy-cli/yarn.lock
+          cache-dependency-path: yarn.lock
       - name: Verify tag matches CLI version
         run: |
           tag="${GITHUB_REF_NAME#v}"
@@ -103,10 +100,8 @@ jobs:
         run: corepack prepare yarn@1.22.22 --activate
       - name: Install dependencies
         run: yarn install --frozen-lockfile
-        working-directory: packages/happy-cli
       - name: Build
-        run: yarn build
-        working-directory: packages/happy-cli
+        run: yarn workspace happy-codex build
       - name: Publish
         run: npm publish --access public --tag "${{ needs.meta.outputs.npm_tag }}"
         working-directory: packages/happy-cli
@@ -131,20 +126,18 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           cache: yarn
-          cache-dependency-path: packages/happy-cli/yarn.lock
+          cache-dependency-path: yarn.lock
       - name: Enable Corepack
         run: corepack enable
       - name: Use Yarn Classic
         run: corepack prepare yarn@1.22.22 --activate
       - name: Install dependencies
         run: yarn install --frozen-lockfile
-        working-directory: packages/happy-cli
       - name: Set dev version
         run: npm version --no-git-tag-version "${{ needs.meta.outputs.version }}"
         working-directory: packages/happy-cli
       - name: Build
-        run: yarn build
-        working-directory: packages/happy-cli
+        run: yarn workspace happy-codex build
       - name: Publish (dev tag)
         run: npm publish --access public --tag dev
         working-directory: packages/happy-cli
