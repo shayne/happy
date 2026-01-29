@@ -53,20 +53,20 @@ jobs:
         with:
           node-version: 24
           cache: yarn
-          cache-dependency-path: cli/yarn.lock
+          cache-dependency-path: packages/happy-cli/yarn.lock
       - name: Enable Corepack
         run: corepack enable
       - name: Use Yarn Classic
         run: corepack prepare yarn@1.22.22 --activate
       - name: Install dependencies
         run: yarn install --frozen-lockfile
-        working-directory: cli
+        working-directory: packages/happy-cli
       - name: Build
         run: yarn build
-        working-directory: cli
+        working-directory: packages/happy-cli
       - name: Test
         run: yarn test
-        working-directory: cli
+        working-directory: packages/happy-cli
 
   publish-npm-prod:
     name: Publish npm package (prod)
@@ -88,11 +88,11 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           cache: yarn
-          cache-dependency-path: cli/yarn.lock
+          cache-dependency-path: packages/happy-cli/yarn.lock
       - name: Verify tag matches CLI version
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          pkg="$(node -p "require('./cli/package.json').version")"
+          pkg="$(node -p "require('./packages/happy-cli/package.json').version")"
           if [ "$tag" != "$pkg" ]; then
             echo "version mismatch: tag=$tag package.json=$pkg" >&2
             exit 1
@@ -103,13 +103,13 @@ jobs:
         run: corepack prepare yarn@1.22.22 --activate
       - name: Install dependencies
         run: yarn install --frozen-lockfile
-        working-directory: cli
+        working-directory: packages/happy-cli
       - name: Build
         run: yarn build
-        working-directory: cli
+        working-directory: packages/happy-cli
       - name: Publish
         run: npm publish --access public --tag "${{ needs.meta.outputs.npm_tag }}"
-        working-directory: cli
+        working-directory: packages/happy-cli
 
   publish-npm-dev:
     name: Publish npm package (dev)
@@ -131,20 +131,20 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           cache: yarn
-          cache-dependency-path: cli/yarn.lock
+          cache-dependency-path: packages/happy-cli/yarn.lock
       - name: Enable Corepack
         run: corepack enable
       - name: Use Yarn Classic
         run: corepack prepare yarn@1.22.22 --activate
       - name: Install dependencies
         run: yarn install --frozen-lockfile
-        working-directory: cli
+        working-directory: packages/happy-cli
       - name: Set dev version
         run: npm version --no-git-tag-version "${{ needs.meta.outputs.version }}"
-        working-directory: cli
+        working-directory: packages/happy-cli
       - name: Build
         run: yarn build
-        working-directory: cli
+        working-directory: packages/happy-cli
       - name: Publish (dev tag)
         run: npm publish --access public --tag dev
-        working-directory: cli
+        working-directory: packages/happy-cli
