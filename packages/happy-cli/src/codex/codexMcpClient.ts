@@ -7,7 +7,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { logger } from '@/ui/logger';
 import type { CodexSessionConfig, CodexToolResponse } from './types';
 import { z } from 'zod';
-import { ElicitRequestParamsSchema, RequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { ElicitRequestParamsSchema, ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { CodexPermissionHandler } from './utils/permissionHandler';
 import { execFileSync } from 'child_process';
 import { randomUUID } from 'node:crypto';
@@ -24,27 +24,6 @@ import {
 import { buildCodexMcpCommand, type CodexRunner } from './runner';
 
 const DEFAULT_TIMEOUT = 14 * 24 * 60 * 60 * 1000; // 14 days, which is the half of the maximum possible timeout (~28 days for int32 value in NodeJS)
-
-function withPassthrough(schema: z.ZodTypeAny): z.ZodTypeAny {
-    const maybePassthrough = (schema as { passthrough?: () => z.ZodTypeAny }).passthrough;
-    if (typeof maybePassthrough === 'function') {
-        return maybePassthrough.call(schema);
-    }
-    const maybeUnion = (schema as { _def?: { options?: z.ZodTypeAny[] } })._def?.options;
-    if (Array.isArray(maybeUnion)) {
-        const options = maybeUnion.map((option) => withPassthrough(option));
-        if (options.length >= 2) {
-            return z.union(options as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]);
-        }
-        return options[0] ?? schema;
-    }
-    return schema;
-}
-
-const ElicitRequestSchemaWithExtras = RequestSchema.extend({
-    method: z.literal('elicitation/create'),
-    params: withPassthrough(ElicitRequestParamsSchema)
-});
 
 function allowNullElicitationRequired(): void {
     const requestedSchema = (ElicitRequestParamsSchema as unknown as { shape?: any })?.shape?.requestedSchema;
@@ -205,7 +184,7 @@ export class CodexMcpClient {
 
         // Register handler for exec command approval requests
         this.client.setRequestHandler(
-            ElicitRequestSchemaWithExtras,
+            ElicitRequestSchema,
             async (request, extra) => {
                 console.log('[CodexMCP] Received elicitation request:', request.params);
 
