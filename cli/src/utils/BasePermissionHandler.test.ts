@@ -65,3 +65,19 @@ describe('BasePermissionHandler id normalization', () => {
         expect(result.execPolicyAmendment).toEqual({ command: ['yarn', 'dev'] });
     });
 });
+
+describe('CodexPermissionHandler auto-approve', () => {
+    it('auto-approves in yolo mode without waiting for RPC', async () => {
+        const session = new TestSession();
+        const handler = new CodexPermissionHandler(session as any);
+        handler.setPermissionMode('yolo');
+
+        const result = await withTimeout(
+            handler.handleToolCall('tool-1', 'CodexBash', { command: ['ls'], cwd: '/' }),
+            100
+        );
+
+        expect(result.decision).toBe('approved_for_session');
+        expect(session.agentState.completedRequests?.['tool-1']?.status).toBe('approved');
+    });
+});

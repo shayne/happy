@@ -70,7 +70,7 @@ export function mapCodexPermissionModeToApprovalPolicy(
         case 'default': return 'untrusted';                    // Ask for non-trusted commands
         case 'read-only': return 'never';                      // Never ask, read-only enforced by sandbox
         case 'safe-yolo': return 'on-failure';                 // Auto-run, ask only on failure
-        case 'yolo': return 'never';                           // Skip approvals entirely
+        case 'yolo': return 'on-failure';                      // Auto-run in CLI; allow all
         // Defensive fallback for Claude-specific modes (backward compatibility)
         case 'bypassPermissions': return 'on-failure';         // Full access: map to yolo behavior
         case 'acceptEdits': return 'on-request';               // Let model decide (closest to auto-approve edits)
@@ -201,8 +201,12 @@ export async function runCodex(opts: {
             logger.debug(`[Codex] User message received with no model override, using current: ${currentModel || 'default'}`);
         }
 
+        const effectivePermissionMode = messagePermissionMode || 'default';
+        if (permissionHandler) {
+            permissionHandler.setPermissionMode(effectivePermissionMode);
+        }
         const enhancedMode: EnhancedMode = {
-            permissionMode: messagePermissionMode || 'default',
+            permissionMode: effectivePermissionMode,
             model: messageModel,
         };
         messageQueue.push(message.content.text, enhancedMode);
@@ -415,6 +419,7 @@ export async function runCodex(opts: {
         }
     }
     permissionHandler = new CodexPermissionHandler(session);
+    permissionHandler.setPermissionMode(currentPermissionMode || 'default');
     const reasoningProcessor = new ReasoningProcessor((message) => {
         // Callback to send messages directly from the processor
         session.sendCodexMessage(message);
