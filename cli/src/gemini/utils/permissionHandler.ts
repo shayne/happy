@@ -43,8 +43,11 @@ export class GeminiPermissionHandler extends BasePermissionHandler {
      * This affects how tool calls are automatically approved/denied
      */
     setPermissionMode(mode: PermissionMode): void {
+        if (this.currentPermissionMode === mode) {
+            return;
+        }
         this.currentPermissionMode = mode;
-        logger.debug(`${this.getLogPrefix()} Permission mode set to: ${mode}`);
+        logger.infoDeveloper(`${this.getLogPrefix()} Permission mode set to: ${mode}`);
     }
 
     /**
@@ -106,7 +109,10 @@ export class GeminiPermissionHandler extends BasePermissionHandler {
         // Check if we should auto-approve based on permission mode
         // Pass toolCallId to check by ID (e.g., change_title-* even if toolName is "other")
         if (this.shouldAutoApprove(toolName, requestId, input)) {
-            logger.debug(`${this.getLogPrefix()} Auto-approving tool ${toolName} (${requestId}) in ${this.currentPermissionMode} mode`);
+            const decision = this.currentPermissionMode === 'yolo' ? 'approved_for_session' : 'approved';
+            logger.infoDeveloper(
+                `${this.getLogPrefix()} Permission auto-approved: tool=${toolName} id=${requestId} mode=${this.currentPermissionMode} decision=${decision}`
+            );
 
             // Update agent state with auto-approved request
             this.session.updateAgentState((currentState) => ({
@@ -119,20 +125,20 @@ export class GeminiPermissionHandler extends BasePermissionHandler {
                         createdAt: Date.now(),
                         completedAt: Date.now(),
                         status: 'approved',
-                        decision: this.currentPermissionMode === 'yolo' ? 'approved_for_session' : 'approved'
+                        decision
                     }
                 }
             }));
 
             return {
-                decision: this.currentPermissionMode === 'yolo' ? 'approved_for_session' : 'approved'
+                decision
             };
         }
 
         // Otherwise, ask for permission
         return new Promise<PermissionResult>((resolve, reject) => {
             // Store the pending request
-            this.pendingRequests.set(requestId, {
+            this.registerPendingRequest(requestId, {
                 resolve,
                 reject,
                 toolName,
@@ -142,6 +148,9 @@ export class GeminiPermissionHandler extends BasePermissionHandler {
             // Update agent state with pending request
             this.addPendingRequestToState(requestId, toolName, input);
 
+            logger.infoDeveloper(
+                `${this.getLogPrefix()} Permission request pending: tool=${toolName} id=${requestId} mode=${this.currentPermissionMode}`
+            );
             logger.debug(`${this.getLogPrefix()} Permission request sent for tool: ${toolName} (${requestId}) in ${this.currentPermissionMode} mode`);
         });
     }

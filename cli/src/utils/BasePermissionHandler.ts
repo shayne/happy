@@ -49,6 +49,8 @@ export abstract class BasePermissionHandler {
     protected pendingRequests = new Map<string, PendingRequest>();
     protected session: ApiSessionClient;
     private isResetting = false;
+    private pendingWarningTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    private static readonly PENDING_WARNING_MS = 30_000;
 
     /**
      * Returns the log prefix for this handler.
@@ -61,6 +63,14 @@ export abstract class BasePermissionHandler {
      */
     protected normalizeRequestId(id: string | number): string {
         return typeof id === 'string' ? id : String(id);
+    }
+
+    /**
+     * Register a pending request and start a delayed warning if it remains pending.
+     */
+    protected registerPendingRequest(requestId: string, pending: PendingRequest): void {
+        this.pendingRequests.set(requestId, pending);
+        this.schedulePendingWarning(requestId, pending.toolName);
     }
 
     constructor(session: ApiSessionClient) {
@@ -95,6 +105,7 @@ export abstract class BasePermissionHandler {
 
                 // Remove from pending
                 this.pendingRequests.delete(requestId);
+                this.clearPendingWarning(requestId);
 
                 // Resolve the permission request
                 const result: PermissionResult = (() => {
@@ -141,6 +152,9 @@ export abstract class BasePermissionHandler {
                     return res;
                 });
 
+                logger.infoDeveloper(
+                    `${this.getLogPrefix()} Permission decision: tool=${pending.toolName} id=${requestId} decision=${result.decision}`
+                );
                 logger.debug(`${this.getLogPrefix()} Permission ${response.approved ? 'approved' : 'denied'} for ${pending.toolName}`);
             }
         );
@@ -183,6 +197,7 @@ export abstract class BasePermissionHandler {
 
             // Reject all pending requests from snapshot
             for (const [id, pending] of pendingSnapshot) {
+                this.clearPendingWarning(id);
                 try {
                     pending.reject(new Error('Session reset'));
                 } catch (err) {
@@ -216,5 +231,28 @@ export abstract class BasePermissionHandler {
         } finally {
             this.isResetting = false;
         }
+    }
+
+    private schedulePendingWarning(requestId: string, toolName: string): void {
+        if (this.pendingWarningTimers.has(requestId)) return;
+        const timer = setTimeout(() => {
+            if (this.pendingRequests.has(requestId)) {
+                logger.infoDeveloper(
+                    `${this.getLogPrefix()} Permission still pending after ${BasePermissionHandler.PENDING_WARNING_MS / 1000}s: tool=${toolName} id=${requestId}`
+                );
+            }
+        }, BasePermissionHandler.PENDING_WARNING_MS);
+        if (typeof timer.unref === 'function') {
+            timer.unref();
+        }
+        this.pendingWarningTimers.set(requestId, timer);
+    }
+
+    private clearPendingWarning(requestId: string): void {
+        const timer = this.pendingWarningTimers.get(requestId);
+        if (timer) {
+            clearTimeout(timer);
+        }
+        this.pendingWarningTimers.delete(requestId);
     }
 }
