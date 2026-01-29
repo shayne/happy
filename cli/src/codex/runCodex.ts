@@ -60,6 +60,25 @@ export function emitReadyIfIdle({ pending, queueSize, shouldExit, sendReady, not
     return true;
 }
 
+export type CodexApprovalPolicy = 'untrusted' | 'never' | 'on-failure' | 'on-request';
+
+export function mapCodexPermissionModeToApprovalPolicy(
+    mode: import('@/api/types').PermissionMode
+): CodexApprovalPolicy {
+    switch (mode) {
+        // Codex native modes
+        case 'default': return 'untrusted';                    // Ask for non-trusted commands
+        case 'read-only': return 'never';                      // Never ask, read-only enforced by sandbox
+        case 'safe-yolo': return 'on-failure';                 // Auto-run, ask only on failure
+        case 'yolo': return 'never';                           // Skip approvals entirely
+        // Defensive fallback for Claude-specific modes (backward compatibility)
+        case 'bypassPermissions': return 'on-failure';         // Full access: map to yolo behavior
+        case 'acceptEdits': return 'on-request';               // Let model decide (closest to auto-approve edits)
+        case 'plan': return 'untrusted';                       // Conservative: ask for non-trusted
+        default: return 'untrusted';                           // Safe fallback
+    }
+}
+
 /**
  * Main entry point for the codex command with ink UI
  */
@@ -653,20 +672,7 @@ export async function runCodex(opts: {
 
             try {
                 // Map permission mode to approval policy and sandbox for startSession
-                const approvalPolicy = (() => {
-                    switch (message.mode.permissionMode) {
-                        // Codex native modes
-                        case 'default': return 'untrusted' as const;                    // Ask for non-trusted commands
-                        case 'read-only': return 'never' as const;                      // Never ask, read-only enforced by sandbox
-                        case 'safe-yolo': return 'on-failure' as const;                 // Auto-run, ask only on failure
-                        case 'yolo': return 'on-failure' as const;                      // Auto-run, ask only on failure
-                        // Defensive fallback for Claude-specific modes (backward compatibility)
-                        case 'bypassPermissions': return 'on-failure' as const;         // Full access: map to yolo behavior
-                        case 'acceptEdits': return 'on-request' as const;               // Let model decide (closest to auto-approve edits)
-                        case 'plan': return 'untrusted' as const;                       // Conservative: ask for non-trusted
-                        default: return 'untrusted' as const;                           // Safe fallback
-                    }
-                })();
+                const approvalPolicy = mapCodexPermissionModeToApprovalPolicy(message.mode.permissionMode);
                 const sandbox = (() => {
                     switch (message.mode.permissionMode) {
                         // Codex native modes
