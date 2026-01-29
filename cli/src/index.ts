@@ -28,6 +28,7 @@ import { handleConnectCommand } from './commands/connect'
 import { spawnHappyCLI } from './utils/spawnHappyCLI'
 import { claudeCliPath } from './claude/claudeLocal'
 import { execFileSync } from 'node:child_process'
+import { consumeCodexPackageSpec } from '@/codex/runner'
 
 
 (async () => {
@@ -85,19 +86,21 @@ import { execFileSync } from 'node:child_process'
     // Handle codex command
     try {
       const { runCodex } = await import('@/codex/runCodex');
+
+      const { spec: codexPackageSpec, args: codexArgs } = consumeCodexPackageSpec(args.slice(1));
       
       // Parse startedBy argument
       let startedBy: 'daemon' | 'terminal' | undefined = undefined;
-      for (let i = 1; i < args.length; i++) {
-        if (args[i] === '--started-by') {
-          startedBy = args[++i] as 'daemon' | 'terminal';
+      for (let i = 0; i < codexArgs.length; i++) {
+        if (codexArgs[i] === '--started-by') {
+          startedBy = codexArgs[++i] as 'daemon' | 'terminal';
         }
       }
       
       const {
         credentials
       } = await authAndSetupMachineIfNeeded();
-      await runCodex({credentials, startedBy});
+      await runCodex({credentials, startedBy, codexPackageSpec});
       // Do not force exit here; allow instrumentation to show lingering handles
     } catch (error) {
       console.error(chalk.red('Error:'), error instanceof Error ? error.message : 'Unknown error')
@@ -466,20 +469,21 @@ ${chalk.bold('To clean up runaway processes:')} Use ${chalk.cyan('happy doctor c
     const wantsClaude = args[0] === 'claude' || args.includes('--claude');
 
     if (!wantsClaude) {
+      const { spec: codexPackageSpec, args: codexArgs } = consumeCodexPackageSpec(args);
       let showHelp = false;
       let showVersion = false;
       let startedBy: 'daemon' | 'terminal' | undefined = undefined;
       const unknownArgs: string[] = [];
 
-      for (let i = 0; i < args.length; i++) {
-        const arg = args[i];
+      for (let i = 0; i < codexArgs.length; i++) {
+        const arg = codexArgs[i];
 
         if (arg === '-h' || arg === '--help') {
           showHelp = true;
         } else if (arg === '-v' || arg === '--version') {
           showVersion = true;
         } else if (arg === '--started-by') {
-          const value = args[++i] as 'daemon' | 'terminal' | undefined;
+          const value = codexArgs[++i] as 'daemon' | 'terminal' | undefined;
           if (value !== 'daemon' && value !== 'terminal') {
             console.error(chalk.red(`Invalid --started-by value: ${value}. Must be 'daemon' or 'terminal'`));
             process.exit(1);
@@ -487,8 +491,8 @@ ${chalk.bold('To clean up runaway processes:')} Use ${chalk.cyan('happy doctor c
           startedBy = value;
         } else {
           unknownArgs.push(arg);
-          if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
-            unknownArgs.push(args[++i]);
+          if (i + 1 < codexArgs.length && !codexArgs[i + 1].startsWith('-')) {
+            unknownArgs.push(codexArgs[++i]);
           }
         }
       }
@@ -500,6 +504,7 @@ ${chalk.bold('happy')} - Start Codex session (default)
 ${chalk.bold('Usage:')}
   happy                    Start Codex session
   happy codex              Start Codex session (explicit)
+  happy @openai/codex@latest  Start Codex via npx
   happy claude             Start Claude Code session
   happy gemini             Start Gemini mode (ACP)
   happy connect            Connect AI vendor API keys
@@ -544,7 +549,7 @@ ${chalk.bold('Options:')}
       }
 
       try {
-        await runCodex({ credentials, startedBy });
+        await runCodex({ credentials, startedBy, codexPackageSpec });
       } catch (error) {
         console.error(chalk.red('Error:'), error instanceof Error ? error.message : 'Unknown error');
         if (process.env.DEBUG) {

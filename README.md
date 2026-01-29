@@ -54,6 +54,9 @@ happy
 
 happy codex
 
+# Run latest Codex via npx (no global codex install)
+happy @openai/codex@latest
+
 ```
 
 <div align="center"><img src="/.github/mascot.png" width="200" title="Happy Coder" alt="Happy Coder"/></div>

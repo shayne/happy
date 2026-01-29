@@ -31,6 +31,7 @@ import { stopCaffeinate } from "@/utils/caffeinate";
 import { connectionState } from '@/utils/serverConnectionErrors';
 import { setupOfflineReconnection } from '@/utils/setupOfflineReconnection';
 import type { ApiSessionClient } from '@/api/apiSession';
+import { buildCodexRunner } from './runner';
 
 type ReadyEventOptions = {
     pending: unknown;
@@ -125,6 +126,7 @@ export function applyAbortRestart({
 export async function runCodex(opts: {
     credentials: Credentials;
     startedBy?: 'daemon' | 'terminal';
+    codexPackageSpec?: string | null;
 }): Promise<void> {
     // Use shared PermissionMode type for cross-agent compatibility
     type PermissionMode = import('@/api/types').PermissionMode;
@@ -417,7 +419,8 @@ export async function runCodex(opts: {
     // Start Context 
     //
 
-    const client = new CodexMcpClient();
+    const runner = buildCodexRunner(opts.codexPackageSpec ?? null);
+    const client = new CodexMcpClient(runner);
 
     // Helper: find Codex session transcript for a given sessionId
     function findCodexResumeFile(sessionId: string | null): string | null {

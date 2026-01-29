@@ -24,6 +24,11 @@ npm install -g happy-codex
 happy
 ```
 
+```bash
+# Run latest Codex via npx (no global codex install)
+happy @openai/codex@latest
+```
+
 This will:
 1. Start a Codex session
 2. Display a QR code to connect from your mobile device
@@ -62,6 +67,7 @@ happy connect gemini
 - `happy claude` – Start Claude Code session
 - `happy gemini` – Start Gemini CLI session
 - `happy codex` – Start Codex mode
+- `happy @openai/codex@latest` – Start Codex via npx
 
 ### Utility Commands
 

@@ -9,7 +9,7 @@ import type { CodexSessionConfig, CodexToolResponse } from './types';
 import { z } from 'zod';
 import { ElicitRequestParamsSchema, RequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { CodexPermissionHandler } from './utils/permissionHandler';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { randomUUID } from 'node:crypto';
 import {
     buildElicitationResponse,
@@ -21,6 +21,7 @@ import {
     type ElicitationResponseStyle,
     type ReviewDecision
 } from './utils/elicitation';
+import { buildCodexMcpCommand, type CodexRunner } from './runner';
 
 const DEFAULT_TIMEOUT = 14 * 24 * 60 * 60 * 1000; // 14 days, which is the half of the maximum possible timeout (~28 days for int32 value in NodeJS)
 
@@ -80,53 +81,26 @@ interface PatchApprovalParams extends CodexElicitationBase {
 
 type CodexElicitationParams = ExecApprovalParams | PatchApprovalParams;
 
-let cachedCodexVersionInfo: CodexVersionInfo | null = null;
+const cachedCodexVersionInfo = new Map<string, CodexVersionInfo>();
 
-function getCodexVersionInfo(): CodexVersionInfo {
-    if (cachedCodexVersionInfo) return cachedCodexVersionInfo;
+function getCodexVersionInfo(runner: CodexRunner, options?: { throwOnError?: boolean }): CodexVersionInfo {
+    const cacheKey = `${runner.command}::${runner.args.join(' ')}`;
+    const cached = cachedCodexVersionInfo.get(cacheKey);
+    if (cached) return cached;
 
     try {
-        const raw = execSync('codex --version', { encoding: 'utf8' }).trim();
-        cachedCodexVersionInfo = parseCodexVersion(raw);
-        return cachedCodexVersionInfo;
+        const raw = execFileSync(runner.command, [...runner.args, '--version'], { encoding: 'utf8' }).trim();
+        const parsed = parseCodexVersion(raw);
+        cachedCodexVersionInfo.set(cacheKey, parsed);
+        return parsed;
     } catch (error) {
         logger.debug('[CodexMCP] Error detecting codex version:', error);
-        cachedCodexVersionInfo = parseCodexVersion(null);
-        return cachedCodexVersionInfo;
-    }
-}
-
-/**
- * Get the correct MCP subcommand based on installed codex version
- * Versions >= 0.43.0-alpha.5 use 'mcp-server', older versions use 'mcp'
- * Returns null if codex is not installed or version cannot be determined
- */
-function getCodexMcpCommand(): string | null {
-    try {
-        const version = execSync('codex --version', { encoding: 'utf8' }).trim();
-        const match = version.match(/codex-cli\s+(\d+\.\d+\.\d+(?:-alpha\.\d+)?)/);
-        if (!match) {
-            logger.debug('[CodexMCP] Could not parse codex version:', version);
-            return null;
+        if (options?.throwOnError) {
+            throw error;
         }
-
-        const versionStr = match[1];
-        const [major, minor, patch] = versionStr.split(/[-.]/).map(Number);
-
-        // Version >= 0.43.0-alpha.5 has mcp-server
-        if (major > 0 || minor > 43) return 'mcp-server';
-        if (minor === 43 && patch === 0) {
-            // Check for alpha version
-            if (versionStr.includes('-alpha.')) {
-                const alphaNum = parseInt(versionStr.split('-alpha.')[1]);
-                return alphaNum >= 5 ? 'mcp-server' : 'mcp';
-            }
-            return 'mcp-server'; // 0.43.0 stable has mcp-server
-        }
-        return 'mcp'; // Older versions use mcp
-    } catch (error) {
-        logger.debug('[CodexMCP] Codex CLI not found or not executable:', error);
-        return null;
+        const parsed = parseCodexVersion(null);
+        cachedCodexVersionInfo.set(cacheKey, parsed);
+        return parsed;
     }
 }
 
@@ -139,12 +113,16 @@ export class CodexMcpClient {
     private handler: ((event: any) => void) | null = null;
     private permissionHandler: CodexPermissionHandler | null = null;
     private execPolicyAmendments = new Map<string, string[]>();
+    private runner: CodexRunner;
+    private versionInfo: CodexVersionInfo | null = null;
 
-    constructor() {
+    constructor(runner: CodexRunner) {
         this.client = new Client(
             { name: 'happy-codex-client', version: '1.0.0' },
             { capabilities: { elicitation: {} } }
         );
+
+        this.runner = runner;
 
         this.client.setNotificationHandler(z.object({
             method: z.literal('codex/event'),
@@ -173,25 +151,35 @@ export class CodexMcpClient {
     async connect(): Promise<void> {
         if (this.connected) return;
 
-        const mcpCommand = getCodexMcpCommand();
+        try {
+            this.versionInfo = getCodexVersionInfo(this.runner, { throwOnError: true });
+        } catch (error) {
+            if (this.runner.command === 'codex') {
+                throw new Error(
+                    'Codex CLI not found or not executable.\n' +
+                    '\n' +
+                    'To install codex:\n' +
+                    '  npm install -g @openai/codex\n' +
+                    '\n' +
+                    'Alternatively, use Claude:\n' +
+                    '  happy claude'
+                );
+            }
 
-        if (mcpCommand === null) {
+            const details = error instanceof Error ? error.message : String(error);
             throw new Error(
-                'Codex CLI not found or not executable.\n' +
-                '\n' +
-                'To install codex:\n' +
-                '  npm install -g @openai/codex\n' +
-                '\n' +
-                'Alternatively, use Claude:\n' +
-                '  happy claude'
+                `Failed to run ${this.runner.label} via npx.\n` +
+                'Ensure npm is installed and the package spec is valid.\n' +
+                `Details: ${details}`
             );
         }
 
-        logger.debug(`[CodexMCP] Connecting to Codex MCP server using command: codex ${mcpCommand}`);
+        const mcpCommand = buildCodexMcpCommand(this.runner);
+        logger.debug(`[CodexMCP] Connecting to Codex MCP server using command: ${mcpCommand.command} ${mcpCommand.args.join(' ')}`);
 
         this.transport = new StdioClientTransport({
-            command: 'codex',
-            args: [mcpCommand],
+            command: mcpCommand.command,
+            args: mcpCommand.args,
             env: Object.keys(process.env).reduce((acc, key) => {
                 const value = process.env[key];
                 if (typeof value === 'string') acc[key] = value;
@@ -209,7 +197,7 @@ export class CodexMcpClient {
     }
 
     private registerPermissionHandlers(): void {
-        const versionInfo = getCodexVersionInfo();
+        const versionInfo = this.versionInfo ?? getCodexVersionInfo(this.runner);
         const responseStyle: ElicitationResponseStyle = getElicitationResponseStyle(
             versionInfo,
             process.env.HAPPY_CODEX_ELICITATION_STYLE?.toLowerCase()
