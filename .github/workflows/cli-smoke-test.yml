@@ -35,10 +35,10 @@ jobs:
       run: yarn install --immutable
 
     - name: Build package
-      run: yarn workspace happy-coder build
+      run: yarn workspace happy-codex build
 
     - name: Pack package
-      run: yarn workspace happy-coder pack
+      run: yarn workspace happy-codex pack
 
     - name: Install packed package globally
       run: |
@@ -95,10 +95,10 @@ jobs:
       run: yarn install --immutable
 
     - name: Build package
-      run: yarn workspace happy-coder build
+      run: yarn workspace happy-codex build
 
     - name: Pack package
-      run: yarn workspace happy-coder pack
+      run: yarn workspace happy-codex pack
 
     - name: Install packed package globally
       shell: cmd
