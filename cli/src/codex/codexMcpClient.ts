@@ -45,6 +45,15 @@ const ElicitRequestSchemaWithExtras = RequestSchema.extend({
     params: withPassthrough(ElicitRequestParamsSchema)
 });
 
+function allowNullElicitationRequired(): void {
+    const requestedSchema = (ElicitRequestParamsSchema as unknown as { shape?: any })?.shape?.requestedSchema;
+    if (!requestedSchema?.shape?.required) return;
+    // Codex MCP sends `requestedSchema.required: null`; accept it to avoid rejecting the request.
+    requestedSchema.shape.required = z.array(z.string()).nullable().optional();
+}
+
+allowNullElicitationRequired();
+
 // Codex MCP elicitation request params
 interface CodexElicitationBase {
     message: string;
