@@ -79,6 +79,46 @@ export function mapCodexPermissionModeToApprovalPolicy(
     }
 }
 
+type AbortRestartState = {
+    wasCreated: boolean;
+    currentModeHash: string | null;
+    thinking: boolean;
+};
+
+type AbortRestartCallbacks = {
+    clearSession: () => void;
+    resetPermissions: () => void;
+    abortReasoning: () => void;
+    resetDiff: () => void;
+    keepAlive: (thinking: boolean, source: 'remote') => void;
+    addStatus: (message: string) => void;
+};
+
+export function applyAbortRestart({
+    message,
+    state: _state,
+    callbacks,
+}: {
+    message: { message: string; mode: any; isolate: boolean; hash: string };
+    state: AbortRestartState;
+    callbacks: AbortRestartCallbacks;
+}): { pending: typeof message; wasCreated: boolean; currentModeHash: string | null; thinking: boolean } {
+    callbacks.addStatus('═'.repeat(40));
+    callbacks.addStatus('Starting new Codex session (after abort)...');
+    callbacks.clearSession();
+    callbacks.resetPermissions();
+    callbacks.abortReasoning();
+    callbacks.resetDiff();
+    callbacks.keepAlive(false, 'remote');
+
+    return {
+        pending: message,
+        wasCreated: false,
+        currentModeHash: null,
+        thinking: false,
+    };
+}
+
 /**
  * Main entry point for the codex command with ink UI
  */
@@ -259,6 +299,7 @@ export async function runCodex(opts: {
     let abortController = new AbortController();
     let shouldExit = false;
     let storedSessionIdForResume: string | null = null;
+    let forceRestartOnNextMessage = false;
 
     /**
      * Handles aborting the current task/inference without exiting the process.
@@ -272,6 +313,7 @@ export async function runCodex(opts: {
             if (client.hasActiveSession()) {
                 storedSessionIdForResume = client.storeSessionForResume();
                 logger.debug('[Codex] Stored session for resume:', storedSessionIdForResume);
+                forceRestartOnNextMessage = true;
             }
             
             abortController.abort();
@@ -641,6 +683,30 @@ export async function runCodex(opts: {
             }
 
             // If a session exists and mode changed, restart on next iteration
+            if (forceRestartOnNextMessage && wasCreated) {
+                forceRestartOnNextMessage = false;
+                const restart = applyAbortRestart({
+                    message,
+                    state: { wasCreated, currentModeHash, thinking },
+                    callbacks: {
+                        clearSession: () => client.clearSession(),
+                        resetPermissions: () => permissionHandler.reset(),
+                        abortReasoning: () => reasoningProcessor.abort(),
+                        resetDiff: () => diffProcessor.reset(),
+                        keepAlive: (value, source) => session.keepAlive(value, source),
+                        addStatus: (text) => messageBuffer.addMessage(text, 'status'),
+                    },
+                });
+                wasCreated = restart.wasCreated;
+                currentModeHash = restart.currentModeHash;
+                thinking = restart.thinking;
+                pending = restart.pending;
+                continue;
+            }
+            if (forceRestartOnNextMessage) {
+                forceRestartOnNextMessage = false;
+            }
+
             if (wasCreated && currentModeHash && message.hash !== currentModeHash) {
                 logger.debug('[Codex] Mode changed – restarting Codex session');
                 messageBuffer.addMessage('═'.repeat(40), 'status');
